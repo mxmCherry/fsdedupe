@@ -6,6 +6,7 @@
 Utils to deduplicate local filesystem
 
 ```shell
-go install github.com/mxmCherry/fsdedupe/cmd/fsdedupe-dir-symlink@latest
-fsdedupe-dir-symlink <PATH_TO_DIR>
+go install github.com/mxmCherry/fsdedupe/cmd/fsdedupe@latest
+
+fsdedupe dir-symlink <PATH_TO_DIR>
 ```
