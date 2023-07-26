@@ -1,6 +1,6 @@
 # fsdedupe
 
-Utils to deduplicate filesystem
+Utils to deduplicate local filesystem
 
 ```shell
 go install github.com/mxmCherry/fsdedupe/cmd/fsdedupe-dir-symlink@latest

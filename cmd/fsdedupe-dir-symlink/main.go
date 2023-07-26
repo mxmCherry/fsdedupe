@@ -22,7 +22,9 @@ func run() error {
 	defer cancel()
 
 	dirs := os.Args[1:]
-	if len(dirs) != 1 {
+	if n := len(dirs); n == 0 {
+		dirs = []string{"."}
+	} else if n > 1 {
 		return fmt.Errorf("one and only one argument (dir path) is expected, got %+v", dirs)
 	}
 
