@@ -30,6 +30,9 @@ func TestDedupeDirSymlink(t *testing.T) {
 	file4 := filepath.Join(tmp, "sub", "dir", "file4.txt")
 	writeFile(t, file4, "DUPE")
 
+	hidden := filepath.Join(tmp, ".hidden", "file4.txt")
+	writeFile(t, hidden, "DUPE")
+
 	if err := fsdedupe.DedupeDirSymlink(context.Background(), tmp, nil); err != nil {
 		t.Fatalf("dedupesymlink %q: %s", tmp, err)
 	}
@@ -62,6 +65,9 @@ func TestDedupeDirSymlink(t *testing.T) {
 	}
 
 	if actual, expected := regular, file2; !slices.Contains(actual, expected) {
+		t.Fatalf("expected %+v to contain %+v", actual, expected)
+	}
+	if actual, expected := regular, hidden; !slices.Contains(actual, expected) {
 		t.Fatalf("expected %+v to contain %+v", actual, expected)
 	}
 }

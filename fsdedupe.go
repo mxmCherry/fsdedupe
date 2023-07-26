@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -22,45 +23,51 @@ func DedupeDirSymlink(ctx context.Context, path string, logger *log.Logger) erro
 
 	byHash := make(map[string]string)
 
-	cb := func(entry fs.DirEntry, fullpath string) error {
+	cb := func(path string, entry fs.DirEntry) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
 
+		if strings.HasPrefix(entry.Name(), ".") {
+			logger.Printf("skipping hidden entry %q\n", path)
+			return fs.SkipDir
+		}
+
 		if !entry.Type().IsRegular() {
+			logger.Printf("skipping non-regular file %q\n", path)
 			return nil
 		}
 
-		logger.Printf("checking regular file %q...\n", fullpath)
+		logger.Printf("checking regular file %q...\n", path)
 
-		hash, err := fileHash(fullpath)
+		hash, err := fileHash(path)
 		if err != nil {
 			return fmt.Errorf("hash file: %w", err)
 		}
 
 		existing, ok := byHash[hash]
 		if !ok {
-			byHash[hash] = fullpath
-			logger.Printf("unique so far: %q (hash: %s)\n", fullpath, hash)
+			byHash[hash] = path
+			logger.Printf("unique so far: %q (hash: %s)\n", path, hash)
 			return nil
 		}
 
-		tmpLinkName := fullpath + ".tmp-" + fmt.Sprintf("%d", time.Now().UnixNano())
+		tmpLinkName := path + ".tmp-" + fmt.Sprintf("%d", time.Now().UnixNano())
 		if err := os.Symlink(existing, tmpLinkName); err != nil {
 			return fmt.Errorf("symlink %q -> %q: %w", existing, tmpLinkName, err)
 		}
 
-		if err := os.Remove(fullpath); err != nil {
-			return fmt.Errorf("remove %q: %w", fullpath, err)
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("remove %q: %w", path, err)
 		}
 
-		if err := os.Rename(tmpLinkName, fullpath); err != nil {
-			return fmt.Errorf("rename %q -> %q: %w", tmpLinkName, fullpath, err)
+		if err := os.Rename(tmpLinkName, path); err != nil {
+			return fmt.Errorf("rename %q -> %q: %w", tmpLinkName, path, err)
 		}
 
-		logger.Printf("symlinked %q -> %q (hash: %s)\n", fullpath, existing, hash)
+		logger.Printf("symlinked %q -> %q (hash: %s)\n", path, existing, hash)
 
 		return nil
 	}
@@ -73,7 +80,7 @@ func DedupeDirSymlink(ctx context.Context, path string, logger *log.Logger) erro
 
 // ----------------------------------------------------------------------------
 
-func walk(path string, cb func(fs.DirEntry, string) error) error {
+func walk(path string, cb func(string, fs.DirEntry) error) error {
 	dir, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open: %w", err)
@@ -89,14 +96,17 @@ func walk(path string, cb func(fs.DirEntry, string) error) error {
 		}
 
 		for _, entry := range entries {
-			fullpath := filepath.Join(path, entry.Name())
-			if err := cb(entry, fullpath); err != nil {
+			path := filepath.Join(path, entry.Name())
+
+			if err := cb(path, entry); errors.Is(err, fs.SkipDir) {
+				continue
+			} else if err != nil {
 				return fmt.Errorf("cb: %w", err)
 			}
 
 			if entry.IsDir() {
-				if err := walk(fullpath, cb); err != nil {
-					return fmt.Errorf("recurse into %q: %w", fullpath, err)
+				if err := walk(path, cb); err != nil {
+					return fmt.Errorf("recurse into %q: %w", path, err)
 				}
 			}
 		}
