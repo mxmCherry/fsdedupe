@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,7 +15,11 @@ import (
 
 // DedupeDirSymlink deduplicates regular files by it's content hash (SHA512),
 // and replaces duplicate file with a symlink to previously seen one.
-func DedupeDirSymlink(ctx context.Context, path string) error {
+func DedupeDirSymlink(ctx context.Context, path string, logger *log.Logger) error {
+	if logger == nil {
+		logger = log.New(io.Discard, "", 0)
+	}
+
 	byHash := make(map[string]string)
 
 	cb := func(entry fs.DirEntry, fullpath string) error {
@@ -28,6 +33,8 @@ func DedupeDirSymlink(ctx context.Context, path string) error {
 			return nil
 		}
 
+		logger.Printf("checking regular file %q...\n", fullpath)
+
 		hash, err := fileHash(fullpath)
 		if err != nil {
 			return fmt.Errorf("hash file: %w", err)
@@ -36,6 +43,7 @@ func DedupeDirSymlink(ctx context.Context, path string) error {
 		existing, ok := byHash[hash]
 		if !ok {
 			byHash[hash] = fullpath
+			logger.Printf("unique so far: %q (hash: %s)\n", fullpath, hash)
 			return nil
 		}
 
@@ -51,6 +59,8 @@ func DedupeDirSymlink(ctx context.Context, path string) error {
 		if err := os.Rename(tmpLinkName, fullpath); err != nil {
 			return fmt.Errorf("rename %q -> %q: %w", tmpLinkName, fullpath, err)
 		}
+
+		logger.Printf("symlinked %q -> %q (hash: %s)\n", fullpath, existing, hash)
 
 		return nil
 	}

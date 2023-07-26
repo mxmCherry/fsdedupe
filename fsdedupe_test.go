@@ -16,7 +16,7 @@ func TestDedupeDirSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mkdirtemp: %s", err)
 	}
-	// defer os.RemoveAll(tmp)
+	defer os.RemoveAll(tmp)
 
 	file1 := filepath.Join(tmp, "file1.txt")
 	writeFile(t, file1, "DUPE")
@@ -30,7 +30,7 @@ func TestDedupeDirSymlink(t *testing.T) {
 	file4 := filepath.Join(tmp, "sub", "dir", "file4.txt")
 	writeFile(t, file4, "DUPE")
 
-	if err := fsdedupe.DedupeDirSymlink(context.Background(), tmp); err != nil {
+	if err := fsdedupe.DedupeDirSymlink(context.Background(), tmp, nil); err != nil {
 		t.Fatalf("dedupesymlink %q: %s", tmp, err)
 	}
 

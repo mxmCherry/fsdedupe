@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -30,7 +31,9 @@ func main() {
 
 // ----------------------------------------------------------------------------
 
-type dirSymlink struct{}
+type dirSymlink struct {
+	verbose bool
+}
 
 func (*dirSymlink) Name() string     { return "dir-symlink" }
 func (*dirSymlink) Synopsis() string { return "Deduplicate dir files using symlinks" }
@@ -41,9 +44,11 @@ func (*dirSymlink) Usage() string {
 `
 }
 
-func (p *dirSymlink) SetFlags(f *flag.FlagSet) {}
+func (c *dirSymlink) SetFlags(f *flag.FlagSet) {
+	f.BoolVar(&c.verbose, "v", false, "verbose (log actions)")
+}
 
-func (p *dirSymlink) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+func (c *dirSymlink) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
 	dir := "."
 	if args := f.Args(); len(args) == 1 {
 		dir = args[0]
@@ -52,7 +57,12 @@ func (p *dirSymlink) Execute(ctx context.Context, f *flag.FlagSet, _ ...interfac
 		return subcommands.ExitUsageError
 	}
 
-	if err := fsdedupe.DedupeDirSymlink(ctx, dir); err != nil {
+	var logger *log.Logger
+	if c.verbose {
+		logger = log.New(os.Stderr, "", log.LstdFlags)
+	}
+
+	if err := fsdedupe.DedupeDirSymlink(ctx, dir, logger); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		return subcommands.ExitFailure
 	}
