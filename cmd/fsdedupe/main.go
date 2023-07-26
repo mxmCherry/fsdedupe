@@ -38,8 +38,10 @@ type dirSymlink struct {
 func (*dirSymlink) Name() string     { return "dir-symlink" }
 func (*dirSymlink) Synopsis() string { return "Deduplicate dir files using symlinks" }
 func (*dirSymlink) Usage() string {
-	return selfCmd + ` dir-symlink <path-to-dir>
+	return selfCmd + ` dir-symlink [-v] <path-to-dir>
 	Recursively deduplicate <path-to-dir>'s files by replacing duplicates (by SHA512 content hash) with symlinks.
+	It skips hidden (dot-prefixed, like ".git" or ".bashrc") entries.
+	The "-v" flag enables action logging.
 	If no <path-to-dir> provided - defaults to current directory.
 `
 }
