@@ -69,8 +69,6 @@ func DedupeSymlink(ctx context.Context, filenames Iterator) error {
 			return filepath.ErrBadPattern
 		}
 
-		println("filename", filename)
-
 		stat, err := os.Stat(filename)
 		if err != nil {
 			return fmt.Errorf("stat %q: %w", filename, err)
