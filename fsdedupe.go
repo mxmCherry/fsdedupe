@@ -1,130 +1,117 @@
 package fsdedupe
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha512"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
-	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
-// DedupeDirSymlink deduplicates regular files by it's content hash (SHA512),
-// and replaces duplicate file with a symlink to previously seen one.
-func DedupeDirSymlink(ctx context.Context, path string, logger *log.Logger) error {
-	if logger == nil {
-		logger = log.New(io.Discard, "", 0)
+// Iterator defines a string (filename) iterator.
+// It is expected to return io.EOF on no more entries.
+type Iterator interface {
+	Next() (string, error)
+}
+
+type lines struct {
+	scanner *bufio.Scanner
+}
+
+// Lines is an Iterator-adapter for an io.Reader (os.Stdin etc).
+// It strips leading/trailing whitespaces and skips empty lines.
+func Lines(r io.Reader) Iterator {
+	return &lines{
+		scanner: bufio.NewScanner(r),
+	}
+}
+
+func (l *lines) Next() (string, error) {
+	if !l.scanner.Scan() {
+		if err := l.scanner.Err(); err != nil {
+			return "", err
+		}
+		return "", io.EOF
 	}
 
-	byHash := make(map[string]string)
+	line := strings.TrimSpace(l.scanner.Text())
+	if line == "" {
+		return l.Next()
+	}
+	return line, nil
+}
 
-	cb := func(path string, entry fs.DirEntry) error {
+// ----------------------------------------------------------------------------
+
+// DedupeSymlink deduplicates input filenames
+// by symlinking files to the first-seen file
+// by SHA512 content hash.
+func DedupeSymlink(ctx context.Context, filenames Iterator) error {
+	byHash := make(map[string]string)
+	digest := sha512.New()
+
+	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
 
-		if strings.HasPrefix(entry.Name(), ".") {
-			logger.Printf("skipping hidden entry %q\n", path)
-			return fs.SkipDir
+		filename, err := filenames.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			return filepath.ErrBadPattern
 		}
 
-		if !entry.Type().IsRegular() {
-			logger.Printf("skipping non-regular file %q\n", path)
-			return nil
-		}
+		println("filename", filename)
 
-		logger.Printf("checking regular file %q...\n", path)
-
-		hash, err := fileHash(path)
+		stat, err := os.Stat(filename)
 		if err != nil {
-			return fmt.Errorf("hash file: %w", err)
+			return fmt.Errorf("stat %q: %w", filename, err)
+		}
+		if !stat.Mode().IsRegular() {
+			return fmt.Errorf("not a regular file: %q", filename)
+		}
+
+		digest.Reset()
+		hash, err := hashContents(digest, filename)
+		if err != nil {
+			return fmt.Errorf("hash contents of %q: %w", filename, err)
 		}
 
 		existing, ok := byHash[hash]
 		if !ok {
-			byHash[hash] = path
-			logger.Printf("unique so far: %q (hash: %s)\n", path, hash)
-			return nil
+			byHash[hash] = filename
+			continue
 		}
 
-		tmpLinkName := path + ".tmp-" + fmt.Sprintf("%d", time.Now().UnixNano())
-		if err := os.Symlink(existing, tmpLinkName); err != nil {
-			return fmt.Errorf("symlink %q -> %q: %w", existing, tmpLinkName, err)
+		if err := os.Remove(filename); err != nil {
+			return fmt.Errorf("remove %q: %w", filename, err)
 		}
-
-		if err := os.Remove(path); err != nil {
-			return fmt.Errorf("remove %q: %w", path, err)
+		if err := os.Symlink(existing, filename); err != nil {
+			return fmt.Errorf("symlink %q -> %q: %w", filename, existing, err)
 		}
-
-		if err := os.Rename(tmpLinkName, path); err != nil {
-			return fmt.Errorf("rename %q -> %q: %w", tmpLinkName, path, err)
-		}
-
-		logger.Printf("symlinked %q -> %q (hash: %s)\n", path, existing, hash)
-
-		return nil
 	}
 
-	if err := walk(path, cb); err != nil {
-		return fmt.Errorf("walk: %w", err)
-	}
 	return nil
 }
 
-// ----------------------------------------------------------------------------
-
-func walk(path string, cb func(string, fs.DirEntry) error) error {
-	dir, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open: %w", err)
-	}
-	defer dir.Close()
-
-	for {
-		entries, err := dir.ReadDir(1)
-		if errors.Is(err, io.EOF) {
-			return nil
-		} else if err != nil {
-			return fmt.Errorf("read dir: %w", err)
-		}
-
-		for _, entry := range entries {
-			path := filepath.Join(path, entry.Name())
-
-			if err := cb(path, entry); errors.Is(err, fs.SkipDir) {
-				continue
-			} else if err != nil {
-				return fmt.Errorf("cb: %w", err)
-			}
-
-			if entry.IsDir() {
-				if err := walk(path, cb); err != nil {
-					return fmt.Errorf("recurse into %q: %w", path, err)
-				}
-			}
-		}
-	}
-}
-
-func fileHash(filename string) (string, error) {
+func hashContents(d hash.Hash, filename string) (string, error) {
 	f, err := os.Open(filename)
 	if err != nil {
 		return "", fmt.Errorf("open: %w", err)
 	}
 	defer f.Close()
 
-	digest := sha512.New()
-
-	if _, err := io.Copy(digest, f); err != nil {
+	if _, err := io.Copy(d, f); err != nil {
 		return "", fmt.Errorf("copy: %w", err)
 	}
 
-	return fmt.Sprintf("%X", digest.Sum(nil)), nil
+	return fmt.Sprintf("%x", d.Sum(nil)), nil
 }

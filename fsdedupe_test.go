@@ -5,18 +5,41 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mxmCherry/fsdedupe"
-	"golang.org/x/exp/slices"
 )
 
-func TestDedupeDirSymlink(t *testing.T) {
-	tmp, err := os.MkdirTemp("", "")
-	if err != nil {
-		t.Fatalf("mkdirtemp: %s", err)
+func TestLines(t *testing.T) {
+	r := strings.NewReader(`
+		Indent
+		Does not
+		Matter
+	`)
+	it := fsdedupe.Lines(r)
+
+	if line, err := it.Next(); err != nil {
+		t.Fatalf("expected no error, got: %s", err)
+	} else if actual, expected := line, "Indent"; actual != expected {
+		t.Fatalf("expected %q, got %q", expected, actual)
 	}
-	defer os.RemoveAll(tmp)
+
+	if line, err := it.Next(); err != nil {
+		t.Fatalf("expected no error, got: %s", err)
+	} else if actual, expected := line, "Does not"; actual != expected {
+		t.Fatalf("expected %q, got %q", expected, actual)
+	}
+
+	if line, err := it.Next(); err != nil {
+		t.Fatalf("expected no error, got: %s", err)
+	} else if actual, expected := line, "Matter"; actual != expected {
+		t.Fatalf("expected %q, got %q", expected, actual)
+	}
+}
+
+func TestDedupeSymlink(t *testing.T) {
+	tmp := t.TempDir()
 
 	file1 := filepath.Join(tmp, "file1.txt")
 	writeFile(t, file1, "DUPE")
@@ -30,54 +53,67 @@ func TestDedupeDirSymlink(t *testing.T) {
 	file4 := filepath.Join(tmp, "sub", "dir", "file4.txt")
 	writeFile(t, file4, "DUPE")
 
-	hidden := filepath.Join(tmp, ".hidden", "file4.txt")
-	writeFile(t, hidden, "DUPE")
-
-	if err := fsdedupe.DedupeDirSymlink(context.Background(), tmp, nil); err != nil {
-		t.Fatalf("dedupesymlink %q: %s", tmp, err)
+	it := &simpleIterator{
+		Entries: []string{
+			file1,
+			file2,
+			file3,
+			file4,
+		},
+	}
+	if err := fsdedupe.DedupeSymlink(context.Background(), it); err != nil {
+		t.Fatalf("expected no error, got: %s", err)
 	}
 
-	var regular []string
-	var symlinked []string
-	err = filepath.Walk(tmp, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		if info.Mode().IsRegular() {
-			regular = append(regular, path)
-		} else {
-			symlinked = append(symlinked, path, readlink(t, path))
-		}
-
-		return nil
-	})
+	// file1 - kept as is (first-seen of duplicates)
+	stat1, err := os.Stat(file1)
 	if err != nil {
-		t.Fatalf("walk %q: %s", tmp, err)
+		t.Fatalf("stat %q: %s", file1, err)
+	}
+	if !stat1.Mode().IsRegular() {
+		t.Errorf("expected %q to be a regular file, but it is not", file1)
 	}
 
-	if actual, expected := symlinked, []string{file1, file3, file4}; !consistsOf(actual, expected...) {
-		t.Fatalf("expected %+v to consist of %+v", actual, expected)
+	// file1 - kept as is (unique)
+	stat2, err := os.Stat(file2)
+	if err != nil {
+		t.Fatalf("stat %q: %s", file2, err)
+	}
+	if !stat2.Mode().IsRegular() {
+		t.Errorf("expected %q to be a regular file, but it is not", file2)
 	}
 
-	if actual, expected := regular, file2; !slices.Contains(actual, expected) {
-		t.Fatalf("expected %+v to contain %+v", actual, expected)
+	// file3 -> file1 (symlink-aliased duplicate)
+	if focus, actual, expected := file3, readlink(t, file3), file1; actual != expected {
+		t.Errorf("expected %q to point to %q, but got: %q", focus, expected, actual)
 	}
-	if actual, expected := regular, hidden; !slices.Contains(actual, expected) {
-		t.Fatalf("expected %+v to contain %+v", actual, expected)
+
+	// file4 -> file1 (symlink-aliased duplicate)
+	if focus, actual, expected := file4, readlink(t, file4), file1; actual != expected {
+		t.Errorf("expected %q to point to %q, but got: %q", focus, expected, actual)
 	}
 }
 
 // ----------------------------------------------------------------------------
 
+type simpleIterator struct {
+	Entries []string
+}
+
+func (i *simpleIterator) Next() (string, error) {
+	if len(i.Entries) == 0 {
+		return "", io.EOF
+	}
+
+	head := i.Entries[0]
+	i.Entries = i.Entries[1:]
+	return head, nil
+}
+
 func writeFile(t *testing.T, name string, contents string) {
 	dir := filepath.Dir(name)
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatalf("mkdirall %q: %s", dir, err)
+		t.Fatalf("mkdir %q: %s", dir, err)
 	}
 
 	f, err := os.Create(name)
@@ -102,14 +138,4 @@ func readlink(t *testing.T, name string) string {
 	}
 
 	return target
-}
-
-func consistsOf(x []string, elems ...string) bool {
-	slices.Sort(x)
-	slices.Sort(elems)
-
-	x = slices.Compact(x)
-	elems = slices.Compact(elems)
-
-	return slices.Equal(x, elems)
 }

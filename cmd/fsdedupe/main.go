@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -23,7 +22,7 @@ func main() {
 	subcommands.Register(subcommands.HelpCommand(), "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
 	subcommands.Register(subcommands.CommandsCommand(), "")
-	subcommands.Register(&dirSymlink{}, "")
+	subcommands.Register(&symlink{}, "")
 
 	flag.Parse()
 	os.Exit(int(subcommands.Execute(ctx)))
@@ -31,40 +30,24 @@ func main() {
 
 // ----------------------------------------------------------------------------
 
-type dirSymlink struct {
-	verbose bool
-}
+type symlink struct{}
 
-func (*dirSymlink) Name() string     { return "dir-symlink" }
-func (*dirSymlink) Synopsis() string { return "Deduplicate dir files using symlinks" }
-func (*dirSymlink) Usage() string {
-	return selfCmd + ` dir-symlink [-v] <path-to-dir>
-	Recursively deduplicate <path-to-dir>'s files by replacing duplicates (by SHA512 content hash) with symlinks.
-	It skips hidden (dot-prefixed, like ".git" or ".bashrc") entries.
-	The "-v" flag enables action logging.
-	If no <path-to-dir> provided - defaults to current directory.
+func (*symlink) Name() string { return "symlink" }
+func (*symlink) Synopsis() string {
+	return "Deduplicate STDIN filenames by symlinking same-content ones"
+}
+func (*symlink) Usage() string {
+	return `find <SOMEDIR> -type f -not -path '*/.*' | ` + selfCmd + ` symlink
+	Deduplicate STDIN-provided filenames by symlinking same-content ones (SHA512) to the first-seen one.
+	Provided "find ..." snippet excludes UNIX hidden files (dot-prefixed).
 `
 }
 
-func (c *dirSymlink) SetFlags(f *flag.FlagSet) {
-	f.BoolVar(&c.verbose, "v", false, "verbose (log actions)")
-}
+func (c *symlink) SetFlags(f *flag.FlagSet) {}
 
-func (c *dirSymlink) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
-	dir := "."
-	if args := f.Args(); len(args) == 1 {
-		dir = args[0]
-	} else if len(args) > 1 {
-		fmt.Fprintf(os.Stderr, "only one directory path is expected, got %+v\n", args)
-		return subcommands.ExitUsageError
-	}
-
-	var logger *log.Logger
-	if c.verbose {
-		logger = log.New(os.Stderr, "", log.LstdFlags)
-	}
-
-	if err := fsdedupe.DedupeDirSymlink(ctx, dir, logger); err != nil {
+func (c *symlink) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	it := fsdedupe.Lines(os.Stdin)
+	if err := fsdedupe.DedupeSymlink(ctx, it); err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err)
 		return subcommands.ExitFailure
 	}
