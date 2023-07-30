@@ -8,5 +8,5 @@ Utils to deduplicate local filesystem
 ```shell
 go install github.com/mxmCherry/fsdedupe/cmd/fsdedupe@latest
 
-fsdedupe dir-symlink <PATH_TO_DIR>
+find <SOMEDIR> -type f -not -path '*/.*' | fsdedupe symlink
 ```
