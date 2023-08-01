@@ -12,23 +12,23 @@ import (
 	"time"
 )
 
-// FS is a deduplicated files manager.
+// DedupeFS is a deduplicated files manager.
 // It keeps files in one dir by their content hash (SHA512),
 // and symlinks (with human-ish names) to them in another dir.
-type FS struct {
+type DedupeFS struct {
 	tempDir string
 	dataDir string
 	linkDir string
 	dirPerm os.FileMode
 }
 
-// NewFS constructs a new FS with given details.
-func NewFS(
+// NewDedupeFS constructs a new DedupeFS with given details.
+func NewDedupeFS(
 	tempDir string,
 	dataDir string,
 	linkDir string,
 	dirPerm os.FileMode,
-) (*FS, error) {
+) (*DedupeFS, error) {
 	var err error
 
 	if filepath.IsLocal(tempDir) {
@@ -52,7 +52,7 @@ func NewFS(
 		dirPerm = 0700
 	}
 
-	return &FS{
+	return &DedupeFS{
 		tempDir: tempDir,
 		dataDir: dataDir,
 		linkDir: linkDir,
@@ -61,7 +61,7 @@ func NewFS(
 }
 
 // Create creates or truncates/opens existing file to be written by caller.
-func (s *FS) Create(linkName string) (io.WriteCloser, error) {
+func (s *DedupeFS) Create(linkName string) (io.WriteCloser, error) {
 	absLinkName := filepath.Join(
 		s.linkDir,
 		filepath.Join(string(filepath.Separator), linkName),
@@ -70,7 +70,7 @@ func (s *FS) Create(linkName string) (io.WriteCloser, error) {
 }
 
 // Open opens the file for reading.
-func (s *FS) Open(linkName string) (io.ReadCloser, error) {
+func (s *DedupeFS) Open(linkName string) (io.ReadCloser, error) {
 	absLinkName := filepath.Join(
 		s.linkDir,
 		filepath.Join(string(filepath.Separator), linkName),
@@ -79,7 +79,7 @@ func (s *FS) Open(linkName string) (io.ReadCloser, error) {
 }
 
 // Rename renames (moves) the file.
-func (s *FS) Rename(oldLinkName, newLinkName string) error {
+func (s *DedupeFS) Rename(oldLinkName, newLinkName string) error {
 	cleanOldLinkName := filepath.Join(string(filepath.Separator), oldLinkName)
 	absOldLinkName := filepath.Join(
 		s.linkDir,
@@ -105,7 +105,7 @@ func (s *FS) Rename(oldLinkName, newLinkName string) error {
 }
 
 // Remove removes the file.
-func (s *FS) Remove(linkName string) error {
+func (s *DedupeFS) Remove(linkName string) error {
 	cleanLinkName := filepath.Join(string(filepath.Separator), linkName)
 	absLinkName := filepath.Join(
 		s.linkDir,
@@ -122,7 +122,7 @@ func (s *FS) Remove(linkName string) error {
 }
 
 // GC removes unreferenced data files.
-func (s *FS) GC() error {
+func (s *DedupeFS) GC() error {
 	dataFiles := make(map[string]struct{})
 
 	collectDataFiles := func(path string, entry os.DirEntry) error {

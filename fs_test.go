@@ -9,15 +9,15 @@ import (
 	"github.com/mxmCherry/fsdedupe"
 )
 
-func TestFS_Create(t *testing.T) {
+func TestDedupeFS_Create(t *testing.T) {
 	tmp := t.TempDir()
-	subject := setupFS(t, tmp)
+	subject := setupDedupeFS(t, tmp)
 
 	const name = "sub/dir/file.txt"
 	const contents = "DUMMY"
 	const contentsHash = "0a8649de6b948fac1722c82ee07f4e3e8386a071750daf23c56fbba31acc922323b362fe10327e7e3322bc9354df59e02ded56f7f6f0ebfd6e99702154299d51" // echo -n DUMMY | sha512sum
 
-	setupFS_Create(t, subject, name, contents)
+	setupDedupeFS_Create(t, subject, name, contents)
 
 	absLinkPath := filepath.Join(tmp, "link", name)
 	b, err := os.ReadFile(absLinkPath)
@@ -34,14 +34,14 @@ func TestFS_Create(t *testing.T) {
 	}
 }
 
-func TestFS_Read(t *testing.T) {
+func TestDedupeFS_Read(t *testing.T) {
 	tmp := t.TempDir()
-	subject := setupFS(t, tmp)
+	subject := setupDedupeFS(t, tmp)
 
 	const name = "sub/dir/file.txt"
 	const contents = "DUMMY"
 
-	setupFS_Create(t, subject, name, contents)
+	setupDedupeFS_Create(t, subject, name, contents)
 
 	r, err := subject.Open(name)
 	if err != nil {
@@ -59,15 +59,15 @@ func TestFS_Read(t *testing.T) {
 	}
 }
 
-func TestFS_Rename(t *testing.T) {
+func TestDedupeFS_Rename(t *testing.T) {
 	tmp := t.TempDir()
-	subject := setupFS(t, tmp)
+	subject := setupDedupeFS(t, tmp)
 
 	const oldName = "sub/dir/file.txt"
 	const newName = "another/sub/dir/file.txt"
 	const contents = "DUMMY"
 
-	setupFS_Create(t, subject, oldName, contents)
+	setupDedupeFS_Create(t, subject, oldName, contents)
 
 	absOldName := filepath.Join(tmp, "link", oldName)
 	absNewName := filepath.Join(tmp, "link", newName)
@@ -89,15 +89,15 @@ func TestFS_Rename(t *testing.T) {
 	}
 }
 
-func TestFS_Remove(t *testing.T) {
+func TestDedupeFS_Remove(t *testing.T) {
 	tmp := t.TempDir()
-	subject := setupFS(t, tmp)
+	subject := setupDedupeFS(t, tmp)
 
 	const name = "sub/dir/file.txt"
 	const contents = "DUMMY"
 	const contentsHash = "0a8649de6b948fac1722c82ee07f4e3e8386a071750daf23c56fbba31acc922323b362fe10327e7e3322bc9354df59e02ded56f7f6f0ebfd6e99702154299d51" // echo -n DUMMY | sha512sum
 
-	setupFS_Create(t, subject, name, contents)
+	setupDedupeFS_Create(t, subject, name, contents)
 
 	if err := subject.Remove(name); err != nil {
 		t.Fatalf("expected no error, got: %s", err)
@@ -116,15 +116,15 @@ func TestFS_Remove(t *testing.T) {
 	}
 }
 
-func TestFS_GC(t *testing.T) {
+func TestDedupeFS_GC(t *testing.T) {
 	tmp := t.TempDir()
-	subject := setupFS(t, tmp)
+	subject := setupDedupeFS(t, tmp)
 
 	const name = "sub/dir/file.txt"
 	const contents = "DUMMY"
 	const contentsHash = "0a8649de6b948fac1722c82ee07f4e3e8386a071750daf23c56fbba31acc922323b362fe10327e7e3322bc9354df59e02ded56f7f6f0ebfd6e99702154299d51" // echo -n DUMMY | sha512sum
 
-	setupFS_Create(t, subject, name, contents)
+	setupDedupeFS_Create(t, subject, name, contents)
 
 	// GC 1, have SOME links pointing to data file
 
@@ -155,8 +155,8 @@ func TestFS_GC(t *testing.T) {
 
 // ----------------------------------------------------------------------------
 
-func setupFS(t *testing.T, tmp string) *fsdedupe.FS {
-	fs, err := fsdedupe.NewFS(
+func setupDedupeFS(t *testing.T, tmp string) *fsdedupe.DedupeFS {
+	fs, err := fsdedupe.NewDedupeFS(
 		filepath.Join(tmp, "temp"),
 		filepath.Join(tmp, "data"),
 		filepath.Join(tmp, "link"),
@@ -169,7 +169,7 @@ func setupFS(t *testing.T, tmp string) *fsdedupe.FS {
 	return fs
 }
 
-func setupFS_Create(t *testing.T, fs *fsdedupe.FS, name, contents string) {
+func setupDedupeFS_Create(t *testing.T, fs *fsdedupe.DedupeFS, name, contents string) {
 	f, err := fs.Create(name)
 	if err != nil {
 		t.Fatalf("expected no error, got: %s", err)
