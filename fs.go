@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -122,7 +123,50 @@ func (s *FS) Remove(linkName string) error {
 
 // GC removes unreferenced data files.
 func (s *FS) GC() error {
-	return errors.New("not implemented") // TODO: implement GC-ing
+	dataFiles := make(map[string]struct{})
+
+	collectDataFiles := func(path string, entry os.DirEntry) error {
+		if !entry.Type().IsRegular() {
+			return fs.SkipDir
+		}
+		dataFiles[path] = struct{}{}
+		return nil
+	}
+	if err := walk(s.dataDir, collectDataFiles); err != nil {
+		return fmt.Errorf("walk %q: %w", s.dataDir, err)
+	}
+
+	onLink := func(path string, entry os.DirEntry) error {
+		// skip non-links
+		if entry.Type()&fs.ModeSymlink == 0 {
+			return nil
+		}
+
+		target, err := os.Readlink(path)
+		if err != nil {
+			return fmt.Errorf("readlink %q: %w", path, err)
+		}
+
+		delete(dataFiles, target)
+
+		return nil
+	}
+	if err := walk(s.linkDir, onLink); err != nil {
+		return fmt.Errorf("walk %q: %w", s.linkDir, err)
+	}
+
+	// any data-link remains there to be reaped?
+	if len(dataFiles) == 0 {
+		return nil
+	}
+
+	for dataFile := range dataFiles {
+		if err := os.RemoveAll(dataFile); err != nil {
+			return fmt.Errorf("remove %q: %w", dataFile, err)
+		}
+	}
+
+	return nil
 }
 
 // ----------------------------------------------------------------------------
@@ -233,4 +277,37 @@ func isDirEmpty(dir string) (bool, error) {
 		return false, err
 	}
 	return len(names) == 0, nil
+}
+
+func walk(path string, cb func(string, os.DirEntry) error) error {
+	d, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open: %w", err)
+	}
+
+	for {
+		entries, err := d.ReadDir(1)
+		if errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			return fmt.Errorf("readdir: %w", err)
+		}
+
+		for _, entry := range entries {
+			childPath := filepath.Join(path, entry.Name())
+			if err := cb(childPath, entry); errors.Is(err, fs.SkipDir) {
+				continue
+			} else if err != nil {
+				return fmt.Errorf("cb %q: %w", childPath, err)
+			}
+
+			if entry.IsDir() {
+				if err := walk(childPath, cb); err != nil {
+					return fmt.Errorf("walk %q: %w", childPath, err)
+				}
+			}
+		}
+	}
+
+	return nil
 }

@@ -2,7 +2,6 @@ package fsdedupe_test
 
 import (
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,7 +20,7 @@ func TestFS_Create(t *testing.T) {
 	setupFS_Create(t, subject, name, contents)
 
 	absLinkPath := filepath.Join(tmp, "link", name)
-	b, err := ioutil.ReadFile(absLinkPath)
+	b, err := os.ReadFile(absLinkPath)
 	if err != nil {
 		t.Fatalf("expected no error, got: %s", err)
 	}
@@ -96,6 +95,7 @@ func TestFS_Remove(t *testing.T) {
 
 	const name = "sub/dir/file.txt"
 	const contents = "DUMMY"
+	const contentsHash = "0a8649de6b948fac1722c82ee07f4e3e8386a071750daf23c56fbba31acc922323b362fe10327e7e3322bc9354df59e02ded56f7f6f0ebfd6e99702154299d51" // echo -n DUMMY | sha512sum
 
 	setupFS_Create(t, subject, name, contents)
 
@@ -103,10 +103,53 @@ func TestFS_Remove(t *testing.T) {
 		t.Fatalf("expected no error, got: %s", err)
 	}
 
-	// this, obviously, asserts that file is gone as well
+	// this, obviously, asserts that link is gone as well
 	_, err := os.Stat(filepath.Join(tmp, "link", "sub"))
 	if !os.IsNotExist(err) {
 		t.Errorf("expected old parent dir to be gone, but it still exists")
+	}
+
+	// data file is kept
+	absDataPath := filepath.Join(tmp, "data", contentsHash+".bin")
+	if _, err := os.Stat(absDataPath); err != nil {
+		t.Fatalf("expected data file to still exist, but got: %v", err)
+	}
+}
+
+func TestFS_GC(t *testing.T) {
+	tmp := t.TempDir()
+	subject := setupFS(t, tmp)
+
+	const name = "sub/dir/file.txt"
+	const contents = "DUMMY"
+	const contentsHash = "0a8649de6b948fac1722c82ee07f4e3e8386a071750daf23c56fbba31acc922323b362fe10327e7e3322bc9354df59e02ded56f7f6f0ebfd6e99702154299d51" // echo -n DUMMY | sha512sum
+
+	setupFS_Create(t, subject, name, contents)
+
+	// GC 1, have SOME links pointing to data file
+
+	if err := subject.GC(); err != nil {
+		t.Fatalf("expected no error, got: %s", err)
+	}
+
+	// link gone, data-file kept
+	if err := subject.Remove(name); err != nil {
+		t.Fatalf("expected no error, got: %s", err)
+	}
+
+	absDataPath := filepath.Join(tmp, "data", contentsHash+".bin")
+	if _, err := os.Stat(absDataPath); err != nil {
+		t.Fatalf("expected data file to still exist, but got: %v", err)
+	}
+
+	// GC 2, have NO links pointing to data file
+
+	if err := subject.GC(); err != nil {
+		t.Fatalf("expected no error, got: %s", err)
+	}
+
+	if _, err := os.Stat(absDataPath); !os.IsNotExist(err) {
+		t.Fatalf("expected data file to be gone, but got: %v", err)
 	}
 }
 
