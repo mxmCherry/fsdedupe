@@ -127,46 +127,6 @@ func (s *FS) GC() error {
 
 // ----------------------------------------------------------------------------
 
-func cleanTree(root, dir string) error {
-	for dir != string(filepath.Separator) {
-		absDir := filepath.Join(root, dir)
-
-		empty, err := isDirEmpty(absDir)
-		if err != nil {
-			return fmt.Errorf("check empty %q: %w", absDir, err)
-		}
-		if !empty {
-			return nil
-		}
-
-		if err := os.RemoveAll(absDir); err != nil {
-			return fmt.Errorf("rm %q: %w", absDir, err)
-		}
-
-		dir = filepath.Dir(dir)
-	}
-
-	return nil
-}
-
-func isDirEmpty(dir string) (bool, error) {
-	d, err := os.Open(dir)
-	if err != nil {
-		return false, fmt.Errorf("open: %w", err)
-	}
-	defer d.Close()
-
-	names, err := d.Readdirnames(1)
-	if errors.Is(err, io.EOF) {
-		return true, nil
-	} else if err != nil {
-		return false, err
-	}
-	return len(names) == 0, nil
-}
-
-// ----------------------------------------------------------------------------
-
 type fileWriter struct {
 	io.Writer
 
@@ -233,4 +193,44 @@ func (f *fileWriter) Close() error {
 	}
 
 	return nil
+}
+
+// ----------------------------------------------------------------------------
+
+func cleanTree(root, dir string) error {
+	for dir != string(filepath.Separator) {
+		absDir := filepath.Join(root, dir)
+
+		empty, err := isDirEmpty(absDir)
+		if err != nil {
+			return fmt.Errorf("check empty %q: %w", absDir, err)
+		}
+		if !empty {
+			return nil
+		}
+
+		if err := os.RemoveAll(absDir); err != nil {
+			return fmt.Errorf("rm %q: %w", absDir, err)
+		}
+
+		dir = filepath.Dir(dir)
+	}
+
+	return nil
+}
+
+func isDirEmpty(dir string) (bool, error) {
+	d, err := os.Open(dir)
+	if err != nil {
+		return false, fmt.Errorf("open: %w", err)
+	}
+	defer d.Close()
+
+	names, err := d.Readdirnames(1)
+	if errors.Is(err, io.EOF) {
+		return true, nil
+	} else if err != nil {
+		return false, err
+	}
+	return len(names) == 0, nil
 }
